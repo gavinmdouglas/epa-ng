@@ -1,3 +1,5 @@
+**This fork was created only for the convenience of creating a tarball of the most recent developmental version for use in a conda package.**
+
 [![Gitter chat](https://badges.gitter.im/Pbdas/epa-ng.png)](https://gitter.im/epa-ng/Lobby)
 
 # EPA-ng
