@@ -21,12 +21,17 @@ Tree::Tree( const std::string &tree_file,
   , options_(options)
 {
   try {
-    tree_ = utree_ptr(build_tree_from_file(tree_file, nums_), utree_destroy);
+    tree_ = utree_ptr(build_tree_from_file(tree_file, nums_, mapper_), utree_destroy);
   } catch (std::invalid_argument& e) {
     auto modelstring = model_.num_states() == 4 ? "GTRGAMMAX" : "PROTGAMMAGTRX";
     std::cout << e.what() << " Please resolve the tree fully.\n( e.g. raxml -g "
               << tree_file << " -m " << modelstring << " -n <name> -s <alignment> -p 1234 )" << std::endl;
     throw std::runtime_error{"Aborting"};
+  }
+
+  if ( ref_msa_.size() != nums_.tip_nodes ) {
+    LOG_WARN << "The reference MSA and tree have differing number of taxa! " <<
+      ref_msa_.size() << " vs. " << nums_.tip_nodes;
   }
 
   partition_ = partition_ptr( build_partition_from_file(model_,

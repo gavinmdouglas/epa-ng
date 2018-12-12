@@ -5,10 +5,12 @@
 #include <memory>
 #include <sstream>
 #include <cassert>
+#include <iomanip>
 
 #include "sample/Sample.hpp"
 #include "util/logging.hpp"
 #include "io/jplace_util.hpp"
+#include "core/pll/rtree_mapper.hpp"
 
 #ifdef __MPI
 #include "net/epa_mpi_util.hpp"
@@ -21,9 +23,11 @@ public:
   jplace_writer(const std::string& out_dir,
                 const std::string& file_name,
                 const std::string& tree_string,
-                const std::string& invocation_string)
-  : tree_string_(tree_string)
-  , invocation_(invocation_string)
+                const std::string& invocation_string,
+                rtree_mapper const& mapper)
+    : tree_string_(tree_string)
+    , invocation_(invocation_string)
+    , mapper_(mapper)
   {
     init_mpi_();
     init_file_(out_dir, file_name);
@@ -38,9 +42,12 @@ public:
     #ifdef __MPI
 
     if (local_rank_ == 0) {
-      const auto trailing = finalize_jplace_string(invocation_);
+      std::stringstream trailing;
+      trailing.precision( precision_ );
+      trailing.setf( std::ios::fixed, std:: ios::floatfield );
+      finalize_jplace_string( invocation_, trailing );
       MPI_File_seek(shared_file_, 0, MPI_SEEK_END);
-      MPI_File_write(shared_file_, trailing.c_str(), trailing.size(),
+      MPI_File_write(shared_file_, trailing.str().c_str(), trailing.str().size(),
                       MPI_CHAR, MPI_STATUS_IGNORE);
     }
     MPI_File_close(&shared_file_);
@@ -48,21 +55,12 @@ public:
     #else
 
     if (file_) {
-      *file_ << finalize_jplace_string(invocation_);
+      finalize_jplace_string(invocation_, *file_);
       file_->close();
     }
 
     #endif
   }
-
-  // jplace_writer& operator=( jplace_writer&& other )
-  // {
-  //   this->invocation_ = std::move(other.invocation_);
-  //   this->file_ = std::move(other.file_);
-  //   other.file_ = nullptr;
-  //   this->prev_gather_ = std::move(other.prev_gather_);
-  //   return *this;
-  // }
 
   void write( Sample<>& chunk )
   {
@@ -89,6 +87,18 @@ public:
     #endif
   }
 
+  jplace_writer& set_precision( size_t n )
+  {
+    precision_ = n;
+
+    #ifndef __MPI
+    file_->precision( n );
+    file_->setf( std::ios::fixed, std:: ios::floatfield );
+    #endif
+
+    return *this;
+  }
+
 protected:
 
   void write_( Sample<>& chunk )
@@ -98,16 +108,18 @@ protected:
     if (shared_file_) {
       // serialize the sample
       std::stringstream buffer;
+      buffer.precision( precision_ );
+      buffer.setf( std::ios::fixed, std:: ios::floatfield );
       if (first_){
         // account for the leading string
         if (local_rank_ == 0) {
-          buffer << init_jplace_string(tree_string_);
+          init_jplace_string( tree_string_, buffer );
         }
         first_ = false;
       } else {
         buffer << ",\n";
       }
-      buffer << sample_to_jplace_string(chunk);
+      sample_to_jplace_string(chunk, buffer, mapper_);
 
       // how much this rank intends to write this turn
       const auto buffer_str = buffer.str();
@@ -142,12 +154,12 @@ protected:
     if (file_) {
       if (first_){
         first_ = false;
-        *file_ << init_jplace_string(tree_string_);
+        init_jplace_string(tree_string_, *file_);
       } else {
         *file_ << ",\n";
       }
 
-      *file_ << sample_to_jplace_string(chunk);
+      sample_to_jplace_string(chunk, *file_, mapper_);
     }
 
     #endif
@@ -171,6 +183,9 @@ protected:
     if (not file_->is_open()) {
       throw std::runtime_error{file_path + ": could not open!"};
     }
+
+    set_precision( precision_ );
+
     #endif
   }
 
@@ -198,7 +213,9 @@ protected:
   std::string invocation_;
   std::future<void> prev_gather_;
   bool first_ = true;
-  
+  unsigned int precision_ = 6;
+  rtree_mapper const mapper_;
+
   #ifdef __MPI
   MPI_File shared_file_;
   size_t bytes_written_ = 0;

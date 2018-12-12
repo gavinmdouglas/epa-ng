@@ -1,14 +1,21 @@
 #pragma once
 
+#include "net/mpihead.hpp"
+#include <cstddef>
+#include <utility>
+
+std::pair<size_t, size_t> local_seq_package( const size_t num_seqs );
+
 #ifdef __MPI
 
-#include "net/mpihead.hpp"
 #include "util/Timer.hpp"
 #include "util/logging.hpp"
 
 #include <sstream>
 #include <memory>
+#include <cstring>
 #include <unordered_map>
+
 #include <cereal/archives/binary.hpp>
 #include <cereal/types/vector.hpp>
 #include <cereal/types/string.hpp>
@@ -29,14 +36,6 @@
 #else
    #error "what is happening here?"
 #endif
-
-// inline auto epa_mpi_file( const int local_rank,
-//                           const size_t section_size)
-// {
-
-
-//   return ;
-// }
 
 // types to keep track of previous async sends
 typedef struct
@@ -76,7 +75,7 @@ static void err_check(int errval)
   }
 }
 
-void epa_mpi_waitall(previous_request_storage_t& reqs)
+inline void epa_mpi_waitall(previous_request_storage_t& reqs)
 {
   for (auto& pair : reqs) {
     auto& r = pair.second;
@@ -102,7 +101,7 @@ void epa_mpi_send(T& obj,
   // send obj to specified node
   std::string data = ss.str();
   auto buffer = new char[data.size()];
-  memcpy(buffer, data.c_str(), data.size() * sizeof(char));
+  std::memcpy(buffer, data.c_str(), data.size() * sizeof(char));
   err_check( MPI_Send(buffer,
                       data.size(),
                       MPI_CHAR,
@@ -140,7 +139,7 @@ void epa_mpi_isend( T& obj,
   // send obj to specified node
   std::string data = ss.str();
   auto buffer = new char[data.size()];
-  memcpy(buffer, data.c_str(), data.size() * sizeof(char));
+  std::memcpy(buffer, data.c_str(), data.size() * sizeof(char));
   err_check( MPI_Issend(buffer,
                         data.size(),
                         MPI_CHAR,
@@ -148,7 +147,7 @@ void epa_mpi_isend( T& obj,
                         0,
                         comm,
                         &prev_req.req));
-  
+
   prev_req.buf = buffer;
 }
 

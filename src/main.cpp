@@ -49,16 +49,18 @@ void exit_epa(int ret=EXIT_SUCCESS)
 int main(int argc, char** argv)
 {
   auto start_all = std::chrono::high_resolution_clock::now();
-  genesis::utils::Logging::log_to_stdout();
 
 #ifdef __MPI
   MPI_INIT(&argc, &argv);
   int local_rank = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &local_rank);
-  if (local_rank != 0) {
-    genesis::utils::Logging::log_to_stdout(false);
+  if (local_rank == 0) {
+    genesis::utils::Logging::log_to_stdout();
   }
+#else
+  genesis::utils::Logging::log_to_stdout();
 #endif
+
   genesis::utils::Logging::max_level(genesis::utils::Logging::kInfo);
 
   std::string invocation("");
@@ -184,6 +186,13 @@ int main(int argc, char** argv)
   app.add_option( "--filter-max",
                   options.filter_max,
                   "Maximum number of placements per sequence to include in final output.",
+                  true
+                )->group("Output");
+
+  auto precision =
+  app.add_option( "--precision",
+                  options.precision,
+                  "Output decimal point precision for floating point numbers.",
                   true
                 )->group("Output");
 
@@ -330,6 +339,10 @@ int main(int argc, char** argv)
 
   if (*filter_max) {
     LOG_INFO << "Selected: Maximum number of placements per query: " << options.filter_max;
+  }
+
+  if (*precision) {
+    LOG_INFO << "Selected: Custom output floating point precision: " << options.precision;
   }
 
   if (options.filter_min > options.filter_max) {
