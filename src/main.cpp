@@ -21,6 +21,9 @@
 #include "seq/MSA.hpp"
 #include "seq/MSA_Info.hpp"
 
+#include "genesis/utils/core/options.hpp"
+#include "genesis/utils/core/fs.hpp"
+
 #ifndef EPA_VERSION
 #define EPA_VERSION "UNKNOWN"
 #endif
@@ -89,6 +92,7 @@ int main(int argc, char** argv)
   bool heuristics_off   = not options.prescoring;
   bool raxml_blo        = not options.sliding_blo;
   bool no_pre_mask      = not options.premasking;
+  bool redo             = false;
 
   const bool empty = argc == 1;
 
@@ -123,7 +127,7 @@ int main(int argc, char** argv)
                   "Path to Reference Tree file."
                 )->group("Input")->check(CLI::ExistingFile);
   auto reference_file_opt =
-  app.add_option( "-s,--ref-msa",
+  app.add_option( "-s,--ref-msa,--msa",
                   reference_file,
                   "Path to Reference MSA file."
                 )->group("Input")->check(CLI::ExistingFile);
@@ -153,7 +157,7 @@ int main(int argc, char** argv)
 
   //  ============== OUTPUT OPTIONS ==============
 
-  app.add_option("-w,--outdir", work_dir, "Path to output directory.", true
+  app.add_option("-w,--outdir,--out-dir", work_dir, "Path to output directory.", true
                 )->group("Output")->check(CLI::ExistingDirectory);
 
   app.add_option("--tmp", options.tmp_dir, "Path to temporary directory. If set, MPI-Rank-local"
@@ -194,6 +198,11 @@ int main(int argc, char** argv)
                   options.precision,
                   "Output decimal point precision for floating point numbers.",
                   true
+                )->group("Output");
+
+  app.add_flag( "--redo",
+                  redo,
+                  "Overwrite existing files."
                 )->group("Output");
 
   //  ============== COMPUTE OPTIONS ==============
@@ -240,6 +249,14 @@ int main(int argc, char** argv)
   app.add_flag( "--no-pre-mask",
                   no_pre_mask,
                   "Do NOT pre-mask sequences. Enables repeats unless --no-repeats is also specified."
+                )->group("Compute");
+
+  std::string rate_scalers_option("auto");
+  app.add_set( "--rate-scalers",
+                rate_scalers_option,
+                {"off", "on", "auto"},
+                "Use individual rate scalers. Important to avoid numerical underflow in taxa rich trees.",
+                true
                 )->group("Compute");
 
   #ifdef __OMP
@@ -292,11 +309,22 @@ int main(int argc, char** argv)
     exit_epa();
   }
 
+  if ( redo ) {
+    genesis::utils::Options::get().allow_file_overwriting( true );
+  }
+
+  std::string log_file;
   #ifdef __MPI
-  genesis::utils::Logging::log_to_file(work_dir + std::to_string(local_rank) + ".epa_info.log");
+  log_file = work_dir + std::to_string(local_rank) + ".epa_info.log";
   #else
-  genesis::utils::Logging::log_to_file(work_dir + "epa_info.log");
+  log_file = work_dir + "epa_info.log";
   #endif
+
+  if ( not redo and genesis::utils::file_exists( log_file ) ) {
+    throw std::runtime_error{ log_file + " already exists! To overwrite existing output files, rerun with --redo" };
+  } else {
+    genesis::utils::Logging::log_to_file( log_file );
+  }
 
   LOG_INFO << "Selected: Output dir: " << work_dir;
 
@@ -373,6 +401,17 @@ int main(int argc, char** argv)
     options.premasking = false;
     options.repeats = true;
     LOG_INFO << "Selected: Disabling pre-masking. (repeats enabled!)";
+  }
+
+  if (rate_scalers_option == "auto") {
+    options.scaling = Options::NumericalScaling::kAuto;
+    LOG_INFO << "Selected: Automatic switching of use of per rate scalers";
+  } else if (rate_scalers_option == "on") {
+    options.scaling = Options::NumericalScaling::kOn;
+    LOG_INFO << "Selected: Using per rate scalers to combat numerical underflow";
+  } else if (rate_scalers_option == "off") {
+    options.scaling = Options::NumericalScaling::kOff;
+    LOG_INFO << "Selected: Disabling per rate scalers";
   }
 
   // if (cli.count("no-repeats")) {
